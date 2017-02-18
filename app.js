@@ -85,7 +85,7 @@ app.use(session(sessionOptions));
 
 var sess;
 
-app.all('*', function(req, res, next) {
+/*app.all('*', function(req, res, next) {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'PUT, GET, POST, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'accept, content-type, x-parse-application-id, x-parse-rest-api-key, x-parse-session-token');
@@ -96,7 +96,7 @@ app.all('*', function(req, res, next) {
     else {
       next();
     }
-});
+});*/
 
 app.get('/', function(req, res) {
     res.send('Hello! Ionic Node Server');
@@ -114,8 +114,6 @@ app.post('/login',function(req, res) {
 
 		guser = user;
 		var sessionToken = user.getSessionToken();
-
-		console.log(sessionToken);
 
 		sess.sessionToken = sessionToken,
 
