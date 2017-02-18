@@ -1,0 +1,16 @@
+*.log
+
+#OS junk files
+*.DS_Store
+.DS_Store
+
+#Node_modules
+node_modules
+
+cert.pem
+key.pem
+
+logs
+
+#Ignore redis db dump
+dump.rdb
