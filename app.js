@@ -20,6 +20,8 @@ var http = require('http');
 var https = require('https');
 var url = require('url') ;
 var cloudinary = require('cloudinary');
+var NodeGeocoder = require('node-geocoder');
+
 var app = express();
 
 var ParseServer = require('parse-server').ParseServer;
@@ -84,6 +86,18 @@ app.use(validator({
 	}
 }));
 
+var options = {
+	provider: 'google',
+	country: 'Singapore',
+
+	// Optional depending on the providers 
+	httpAdapter: 'https', // Default 
+	apiKey: 'AIzaSyDjsCLbL-bkC4cFeLYIfR-a3tbN_vF7XqU', // for Mapquest, OpenCage, Google Premier 
+	formatter: null         // 'gpx', 'string', ... 
+};
+
+var geocoder = NodeGeocoder(options);
+
 app.use(session(sessionOptions));
 
 var sess;
@@ -101,7 +115,7 @@ var sess;
     }
 });*/
 
-/*app.use(function (req, res, next) {
+app.use(function (req, res, next) {
 	res.header("Access-Control-Allow-Origin", "*");
 	res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
 	res.header('Access-Control-Allow-Methods', 'POST, GET, PUT, DELETE, OPTIONS');
@@ -110,7 +124,7 @@ var sess;
 	} else {
 		next();
 	}
-});*/
+});
 
 app.get('/', function(req, res) {
     res.send('Hello! Ionic Node Server');
@@ -131,8 +145,6 @@ app.post('/login', function(req, res) {
 			sess.user = user,
 			sess.userId = user.id,
 			sess.sessionToken = sessionToken;
-
-		console.log(sess);
 
 		res.send({code: 200, message: "Success", token: sessionToken, userId: sess.userId});
 
@@ -188,7 +200,7 @@ app.post('/signup', function(req, res) {
 
     	var email = req.body.email,
             mobilenumber = req.body.mobilenumber,
-            password1 = req.body.password1,
+            password = req.body.password,
             // password2 = req.body.password2,
             name = req.body.name;
 
@@ -207,32 +219,16 @@ app.post('/signup', function(req, res) {
             userObj.set("email", email);
             userObj.set("phoneNumber", mobilenumber);
             userObj.set("name", name);
-            userObj.set("password", password1);
+            userObj.set("password", password);
             return userObj.signUp();
         }).then(function(userObj) {
         	if(!userObj) {
                 return Parse.Promise.error({code: 404, message: "Failure"});
             }
             else {
-                // return createItems(userObj, 4);
-                var currentDate = moment();
-				var nextDate = currentDate.add(4, 'days');
-                var Item = Parse.Object.extend("Item");
-				var itemObj = new Item();
-				itemObj.set("name", "Chicken");
-				itemObj.set("owner", userObj);
-				itemObj.set("expiryDate", nextDate);
-				return itemObj.save();
+
+            	return createItems(userObj, 3, 'chicken');  
             }
-            // else {
-                // guserObj = userObj;
-                // return createACL(userObj, true, false);
-            // }
-        // }).then(function(acl) {
-            // return assignACL(guserObj, acl);
-        // }).then(function(userObj) {
-            // return createPublicDataObj(guserObj);
-        // }).then(function(publicDataObj) {
         }).then(function(items) {
         	res.send({code: 200, message: "Success"});
         }, function(error) {
@@ -246,8 +242,6 @@ app.post('/getYourItems', function(req, res) {
 
 	var userId = req.body.userid,
 		itemList = [];
-
-	console.log(userId);
 
 	var Item = Parse.Object.extend("Item");
     var itemQuery  = new Parse.Query(Item);
@@ -263,7 +257,7 @@ app.post('/getYourItems', function(req, res) {
 
 		_.each(items, function(item) {
 			promise = promise.then(function() {
-				itemList.push({id: item.id, name: item.get('name'), expirydate: item.get('expiryDate'), consumed: item.get('consumed')});
+				itemList.push({id: item.id, name: item.get('name'), expirydate: formatDate(item.get('expiryDate')), consumed: item.get('consumed')});
 			});
 		});
 		return promise;
@@ -274,7 +268,6 @@ app.post('/getYourItems', function(req, res) {
 		console.log(error);
 		res.send({code: 404, message: error.message});
 	})
-
 });
 
 app.post('/consumeYourItem', function(req, res) {
@@ -321,21 +314,78 @@ app.post('/addYourItem', function(req, res) {
 	var userObj = new User();
 	userObj.id = userId;
 
-	var Item = Parse.Object.extend("Item");
-    var itemObj = new Item();
-    itemObj.set("name", itemValue.capitalize());
-    itemObj.set("owner", userObj);
-    itemObj.set("expiryDate", nextDate);
-    itemObj.set("consumed", false);
-    itemObj.save().then(function(item) {
-    	res.send({id: item.id, name: item.get('name'), expirydate: item.get('expiryDate'), consumed: item.get('consumed')});
+	createItems(userObj, value, itemValue).then(function(item) {
+    	res.send({id: item.id, name: item.get('name'), expirydate: formatDate(item.get('expiryDate')), consumed: item.get('consumed')});
     }, function(error) {
     	console.log(error);
     	res.send({code: 404, message: "Failure"});
     });
 });
 
-var createItems = function(userObj, value, res) {
+app.post('/shareYourItem', function(req, res) {
+
+	var userId = req.body.userid,
+		itemId = req.body.itemid
+		address = req.body.address;
+
+	var User = Parse.Object.extend("User");
+	var userObj = new User();
+	userObj.id = userId;
+
+	var Item = Parse.Object.extend("Item");
+	var itemObj = new Item();
+	itemObj.id = itemId;
+
+	geocoder.geocode(address).then(function(res) {
+
+		var AvailableItem = Parse.Object.extend("AvailableItem");
+	    var availItemObj  = new AvailableItem();
+		availItemObj.set("item", itemObj);
+		availItemObj.set("owner", userObj);
+		availItemObj.set("availability", true);
+		availItemObj.set("location",  new Parse.GeoPoint({latitude: res[0].latitude, longitude: res[0].longitude}));
+		return availItemObj.save();
+	}).then(function(availItemObj) {
+    	console.log(availItemObj);
+    	res.send({code: 200, message: "Success"});
+    }, function(error) {
+    	console.log(error);
+    	res.send({code: 404, message: "Failure"});
+    });
+});
+
+app.post('/getAvailableItems', function(req, res) {
+
+	var userId = req.body.userid,
+		itemList = [];
+
+	var AvailableItem = Parse.Object.extend("AvailableItem");
+    var availItemQuery  = new Parse.Query(AvailableItem);
+    availItemQuery.include("owner");
+    availItemQuery.include("item");
+    availItemQuery.equalTo("availability", true);
+	availItemQuery.find().then(function(items) {
+
+		var promise = Parse.Promise.as();
+
+		_.each(items, function(item) {
+			promise = promise.then(function() {
+
+				if(item.get('owner').id !== userId)
+					itemList.push({id: item.id, name: item.get('item').get('name'), expirydate: formatDate(item.get('item').get('expiryDate')), interested: (item.get('interestedUser')  && item.get('interestedUser').id) === userId, location: item.get('location')});
+			});
+		});
+		return promise;
+	}).then(function() {
+		console.log(itemList);
+		res.send(itemList);
+	}, function(error) {
+		console.log(error);
+		res.send({code: 404, message: error.message});
+	})
+});
+
+var createItems = function(userObj, value, itemValue, res) {
 
 	var promise = new Parse.Promise();
 
@@ -343,11 +393,9 @@ var createItems = function(userObj, value, res) {
 	var nextDate = new Date(currentDate);
 	nextDate.setDate(nextDate.getDate() + value);
 
-	// Parse.Cloud.useMasterKey();
-
 	var Item = Parse.Object.extend("Item");
 	var itemObj = new Item();
-	itemObj.set("name", "Chicken");
+	itemObj.set("name", itemValue.capitalise());
 	itemObj.set("owner", userObj);
 	itemObj.set("expiryDate", nextDate);
 	itemObj.set("consumed", false);
@@ -452,9 +500,13 @@ var publicDataObj = function(userObj, hubObj, res) {
     return promise;
 };
 
-String.prototype.capitalize = function() {
+String.prototype.capitalise = function() {
     return this.charAt(0).toUpperCase() + this.slice(1);
 }
+
+function formatDate(date) {
+	return moment(date).format("Do MMMM YYYY");
+};
 
 /// catch 404 and forward to error handler
 app.use(function(req, res, next) {
