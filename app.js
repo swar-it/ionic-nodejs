@@ -150,7 +150,7 @@ app.post('/login', function(req, res) {
 
 	}, function(error) {
 		console.log(error);
-		res.send({code: 404, message: "Failure"});
+		res.status(404).send({code: 404, message: "Failure"});
 	});
 });
 
@@ -175,7 +175,7 @@ app.post('/logout', function(req, res) {
 				res.send({code: 200, message: "Success"});
 			}, function (error) {
 				console.log(error);
-				res.send({code: 404, message: "Failure"});
+				res.status(404).send({code: 404, message: "Failure"});
 			});
 		}
 	});
@@ -233,7 +233,7 @@ app.post('/signup', function(req, res) {
         	res.send({code: 200, message: "Success"});
         }, function(error) {
             console.log(error);
-            res.send(error);
+            res.status(404).send(error);
         });
     // }
 });
@@ -266,7 +266,7 @@ app.post('/getYourItems', function(req, res) {
 		res.send(itemList);
 	}, function(error) {
 		console.log(error);
-		res.send({code: 404, message: error.message});
+		res.status(404).send({code: 404, message: error.message});
 	})
 });
 
@@ -284,7 +284,7 @@ app.post('/consumeYourItem', function(req, res) {
     	res.send({code: 200, message: "Success"});
     }, function(error) {
     	console.log(error);
-    	res.send({code: 404, message: "Failure"});
+    	res.status(404).send({code: 404, message: "Failure"});
     });
 });
 
@@ -318,7 +318,7 @@ app.post('/addYourItem', function(req, res) {
     	res.send({id: item.id, name: item.get('name'), expirydate: formatDate(item.get('expiryDate')), consumed: item.get('consumed')});
     }, function(error) {
     	console.log(error);
-    	res.send({code: 404, message: "Failure"});
+    	res.status(404).send({code: 404, message: "Failure"});
     });
 });
 
@@ -350,7 +350,7 @@ app.post('/shareYourItem', function(req, res) {
     	res.send({code: 200, message: "Success"});
     }, function(error) {
     	console.log(error);
-    	res.send({code: 404, message: "Failure"});
+    	res.status(404).send({code: 404, message: "Failure"});
     });
 });
 
@@ -381,7 +381,7 @@ app.post('/getAvailableItems', function(req, res) {
 		res.send(itemList);
 	}, function(error) {
 		console.log(error);
-		res.send({code: 404, message: error.message});
+		res.status(404).send({code: 404, message: error.message});
 	})
 });
 
