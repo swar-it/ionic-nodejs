@@ -2,15 +2,19 @@ var twilio = require('twilio');
 var twilioClient = new twilio.RestClient('AC6999b0dc0b56d874b843de86885e2c02', '811be44e4b1725676dc4af6633528bf6');
 
 var express = require('express');
+var path = require('path');
 var favicon = require('serve-favicon');
+var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var multer = require('multer'); 
+var _ = require('underscore');
 var request = require('request');
 var request_promise = require('request-promise');
 var moment = require('moment');
 var fs = require('fs');
 var session = require('express-session');
+var jwt = require('jwt-simple');
 var validator = require('express-validator');
 var http = require('http');
 var https = require('https');
@@ -25,6 +29,12 @@ app.use('/parse', new ParseServer(config.server));
 
 Parse.initialize(config.server.appId, config.server.masterKey, config.server.masterKey);
 Parse.serverURL = config.server.serverURL;
+
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'jade');
+app.use(express.static(path.join(__dirname, 'public')));
+
+var secret = "u4xAS3kcVaD0&9c@1NVcsr^3"; // for JWT
 
 var sessionOptions = {
 	name: "ionicapp",
@@ -42,8 +52,8 @@ cloudinary.config({
     api_secret: 'Vl3Is-OGMbS0pT5pOmPnGbjw7uA'
 });
 
-app.use('/public', express.static(__dirname + '/public'));
 app.use(favicon(__dirname + '/public/images/favicon.ico'));
+app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded());
 app.use(cookieParser());
@@ -51,33 +61,26 @@ app.use(multer());
 
 app.use(validator({
 	customValidators: {
-		isValidFileType: function(param, type1, type2) {
-			return param.mimetype == type1 || param.mimetype == type2;
-		},
-		isValidFileSize: function(param, num) {
-			return param.size < num;
-		},
 		isValidName: function(param) {
 			return (/[a-zA-Z](?:[a-zA-Z ]*[a-zA-Z])?$/g).test(param);
-		},
-		isValidAddress: function(param) {
-			// return (/^[a-zA-Z0-9\\-_+#,\n. -]+$/).test(param);
-			return (/^[a-zA-Z0-9\\\-_+#,. ]+$/).test(param);
-		},
-		isValidId: function(param) {
-			return (/^[a-zA-Z0-9]+$/g).test(param);
-		},
-		isValidShId: function(param) {
-			return (/^[a-zA-Z0-9-]+$/g).test(param);
 		},
 		isValidDate: function(param) {
 			if(param)
 				return moment(decodeURIComponent(param), moment.ISO_8601).isValid();
 			return true;
 		},
-		isValidKeyfobId: function(param) {
-			return (/^[a-zA-Z0-9:]+$/g).test(param);
-		}
+		isMobileNumber: function(param) {
+            return (/^[0-9+]+$/).test(param);
+        },
+        isToken: function(param) {
+            return (/^[0-9]{4}$/g).test(param);
+        },
+        isStrongPassword: function(param) {
+            return (/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*([!-/:-@\[-`{-~])).{6,}$/g).test(param);
+        },
+        isEqual: function(param, param1) {
+            return param == param1;
+        }
 	}
 }));
 
@@ -113,36 +116,41 @@ app.get('/', function(req, res) {
     res.send('Hello! Ionic Node Server');
 });
 
-app.post('/login',function(req, res) {
+app.post('/login', function(req, res) {
 
 	var email = req.body.email || "",
 		password = req.body.password || "",
 		guser;
-
-	sess = req.session;
 
 	Parse.User.logIn(email, password).then(function(user) {
 
 		guser = user;
 		var sessionToken = user.getSessionToken();
 
-		sess.sessionToken = sessionToken,
+		sess = req.session,
+			sess.user = user,
+			sess.userId = user.id,
+			sess.sessionToken = sessionToken;
 
-		res.send({code: 200, status: "Success", token: sessionToken});
+		console.log(sess);
+
+		res.send({code: 200, message: "Success", token: sessionToken, userId: sess.userId});
 
 	}, function(error) {
 		console.log(error);
-		res.send({code: 404, status: "Failure"});
+		res.send({code: 404, message: "Failure"});
 	});
 });
 
-app.post('/logout',function(req,res) {
+app.post('/logout', function(req, res) {
 
 	sess = req.session;
+	
+	// sessionToken = sess.sessionToken;
 
-	sessionToken = sess.sessionToken;
+	sessionToken = req.body.sessiontoken;
 
-	console.log(sessionToken);
+	sess.sessionToken = sessionToken;
 
 	sess.destroy(function(err) {
 		if(err) {
@@ -152,14 +160,301 @@ app.post('/logout',function(req,res) {
 			Parse.User.enableUnsafeCurrentUser();
 			Parse.User.become(sessionToken).then(function (user) {
 				Parse.User.logOut();
-				res.redirect('/login');
+				res.send({code: 200, message: "Success"});
 			}, function (error) {
 				console.log(error);
-				res.redirect('/login');
+				res.send({code: 404, message: "Failure"});
 			});
 		}
 	});
 });
+
+app.post('/signup', function(req, res) {
+
+	/*req.checkBody("name", "Enter a valid name.").isName();
+	req.checkBody("email", "Enter a valid email").isEmail();
+    req.checkBody("mobilenumber", "Enter a valid mobile number.").isMobileNumber();
+    req.checkBody("password1", "Enter a valid password.").isStrongPassword();
+    // req.checkBody("password2", "Passwords don't match.").isEqual(req.body.password1);
+
+    var errors = req.validationErrors();
+
+    console.log(errors);
+
+    if(errors && typeof errors != 'false' && errors != 'false') {
+        res.send({code: 404, message: "Failure"});
+    }
+    else {*/
+
+    	var email = req.body.email,
+            mobilenumber = req.body.mobilenumber,
+            password1 = req.body.password1,
+            // password2 = req.body.password2,
+            name = req.body.name;
+
+        checkPhoneNumberAlreadyExists(mobilenumber).then(function(user) {
+            if(user) {
+                return Parse.Promise.error({code: 404, message: "This phone number is already in use"});
+            }
+            else {
+                return;
+            }
+        }).then(function() {
+
+        	var userObj = new Parse.User();
+
+            userObj.set("username", email);
+            userObj.set("email", email);
+            userObj.set("phoneNumber", mobilenumber);
+            userObj.set("name", name);
+            userObj.set("password", password1);
+            return userObj.signUp();
+        }).then(function(userObj) {
+        	if(!userObj) {
+                return Parse.Promise.error({code: 404, message: "Failure"});
+            }
+            else {
+                // return createItems(userObj, 4);
+                var currentDate = moment();
+				var nextDate = currentDate.add(4, 'days');
+                var Item = Parse.Object.extend("Item");
+				var itemObj = new Item();
+				itemObj.set("name", "Chicken");
+				itemObj.set("owner", userObj);
+				itemObj.set("expiryDate", nextDate);
+				return itemObj.save();
+            }
+            // else {
+                // guserObj = userObj;
+                // return createACL(userObj, true, false);
+            // }
+        // }).then(function(acl) {
+            // return assignACL(guserObj, acl);
+        // }).then(function(userObj) {
+            // return createPublicDataObj(guserObj);
+        // }).then(function(publicDataObj) {
+        }).then(function(items) {
+        	res.send({code: 200, message: "Success"});
+        }, function(error) {
+            console.log(error);
+            res.send(error);
+        });
+    // }
+});
+
+app.post('/getYourItems', function(req, res) {
+
+	var userId = req.body.userid,
+		itemList = [];
+
+	console.log(userId);
+
+	var Item = Parse.Object.extend("Item");
+    var itemQuery  = new Parse.Query(Item);
+    itemQuery.include("owner");
+    itemQuery.equalTo("owner", {
+		__type: "Pointer",
+		className: "_User",
+		objectId: userId
+	});
+	itemQuery.find().then(function(items) {
+
+		var promise = Parse.Promise.as();
+
+		_.each(items, function(item) {
+			promise = promise.then(function() {
+				itemList.push({id: item.id, name: item.get('name'), expirydate: item.get('expiryDate'), consumed: item.get('consumed')});
+			});
+		});
+		return promise;
+	}).then(function() {
+		console.log(itemList);
+		res.send(itemList);
+	}, function(error) {
+		console.log(error);
+		res.send({code: 404, message: error.message});
+	})
+
+});
+
+app.post('/consumeYourItem', function(req, res) {
+
+	var userId = req.body.userid,
+		itemId = req.body.itemid;
+
+	var Item = Parse.Object.extend("Item");
+    var itemQuery  = new Parse.Query(Item);
+    itemQuery.get(itemId).then(function(item) {
+    	item.set("consumed", true);
+    	return item.save();
+    }).then(function(item) {
+    	res.send({code: 200, message: "Success"});
+    }, function(error) {
+    	console.log(error);
+    	res.send({code: 404, message: "Failure"});
+    });
+});
+
+app.post('/addYourItem', function(req, res) {
+
+	var userId = req.body.userid,
+		itemValue = req.body.itemvalue;
+
+	if(itemValue === "apple")
+			value = 7;
+		else if(itemValue === "banana")
+			value = 2;
+		else if(itemValue === "bread")
+			value = 3;
+		else if(itemValue === "chicken")
+			value = 4;
+		else if(itemValue === "grapes")
+			value = 3;
+		else if(itemValue === "tofu")
+			value = 3;
+
+	var currentDate = new Date();
+	var nextDate = new Date(currentDate);
+	nextDate.setDate(nextDate.getDate() + value);
+
+	var User = Parse.Object.extend("User");
+	var userObj = new User();
+	userObj.id = userId;
+
+	var Item = Parse.Object.extend("Item");
+    var itemObj = new Item();
+    itemObj.set("name", itemValue.capitalize());
+    itemObj.set("owner", userObj);
+    itemObj.set("expiryDate", nextDate);
+    itemObj.set("consumed", false);
+    itemObj.save().then(function(item) {
+    	res.send({id: item.id, name: item.get('name'), expirydate: item.get('expiryDate'), consumed: item.get('consumed')});
+    }, function(error) {
+    	console.log(error);
+    	res.send({code: 404, message: "Failure"});
+    });
+});
+
+var createItems = function(userObj, value, res) {
+
+	var promise = new Parse.Promise();
+
+	var currentDate = new Date();
+	var nextDate = new Date(currentDate);
+	nextDate.setDate(nextDate.getDate() + value);
+
+	// Parse.Cloud.useMasterKey();
+
+	var Item = Parse.Object.extend("Item");
+	var itemObj = new Item();
+	itemObj.set("name", "Chicken");
+	itemObj.set("owner", userObj);
+	itemObj.set("expiryDate", nextDate);
+	itemObj.set("consumed", false);
+	itemObj.save().then(function(itemObj) {
+		console.log(itemObj);
+		if(!itemObj) {
+			console.log("Failure");
+            var error = {code: 404, message: "Failure"};
+            if (res) res.error(error);
+            promise.reject(error);
+        }
+        else {
+        	console.log("Success");
+            if (res) res.success(itemObj);
+            promise.resolve(itemObj);
+        }
+	});
+	return promise;
+
+};
+
+var checkPhoneNumberAlreadyExists = function(phoneNumber) {
+
+    // Parse.Cloud.useMasterKey();
+
+    var User = Parse.Object.extend("User");
+    var query  = new Parse.Query(User);
+    query.equalTo("phoneNumber", phoneNumber);
+    return query.first().then(function(user) {
+        if(user) {
+            return Parse.Promise.as(user);
+        }
+        else {
+            return Parse.Promise.as(undefined);
+        }
+    }, function(error) {
+        return Parse.Promise.as(undefined);
+    });
+};
+
+var createACL = function(userObj, read, write, res) {
+
+    var promise = new Parse.Promise();
+
+    var acl = new Parse.ACL();
+    acl.setReadAccess(userObj, read);
+    acl.setWriteAccess(userObj, write);
+    if (res) res.success(acl);
+        promise.resolve(acl);
+    return promise;
+};
+
+var assignACL = function(userObj, acl, res) {
+
+    var promise = new Parse.Promise();
+
+    Parse.Cloud.useMasterKey();
+
+    userObj.set("ACL", acl);
+    userObj.save().then(function(userObj) {
+        if (res) res.success(userObj);
+        promise.resolve(userObj);
+    }, function(error) {
+        if (res) res.error(error);
+        promise.reject(error);
+    });
+
+    return promise;
+};
+
+var publicDataObj = function(userObj, hubObj, res) {
+
+    var promise = new Parse.Promise();
+
+    var roleName = "friendsOf_" + userObj.id;
+    var friendRole = new Parse.Role(roleName, new Parse.ACL(userObj));
+    friendRole.save().then(function(friendRole) {
+        var acl = new Parse.ACL();
+        acl.setReadAccess(friendRole, true);
+        acl.setReadAccess(userObj, true);
+        acl.setWriteAccess(userObj, true);
+        var friendData = new Parse.Object("FriendData", {
+            user: userObj,
+            ACL: acl,
+            name: userObj.get('name'),
+            phoneNumber: userObj.get('phoneNumber'),
+            email: userObj.get('email'),
+            address: userObj.get('address'),
+            profilePicture: userObj.get('profilePicture'),
+            dateOfBirth: userObj.get('dateOfBirth'),
+            hub: hubObj
+        });
+        return friendData.save();
+    }).then(function(friendData) {
+        if (res) res.success(friendData);
+        promise.resolve(friendData);
+    }, function(error) {
+        if (res) res.error(error);
+        promise.reject(error);
+    });
+
+    return promise;
+};
+
+String.prototype.capitalize = function() {
+    return this.charAt(0).toUpperCase() + this.slice(1);
+}
 
 /// catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -174,6 +469,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
 	app.use(function(err, req, res, next) {
+		console.log(err);
 		res.status(err.status || 500);
 		res.render('error', {
 			message: err.message,
