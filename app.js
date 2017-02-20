@@ -455,6 +455,8 @@ app.post('/getAvailableItems', function(req, res) {
 app.post('/changeInterest', function(req, res) {
 
 	var userId = req.body.userid,
+		gowner,
+		message = '',
 		itemId = req.body.itemid;
 
 	var User = Parse.Object.extend("User");
@@ -463,17 +465,29 @@ app.post('/changeInterest', function(req, res) {
 
 	var AvailableItem = Parse.Object.extend("AvailableItem");
     var availItemQuery  = new Parse.Query(AvailableItem);
+    availItemQuery.include('owner');
+    availItemQuery.include('item');
     availItemQuery.get(itemId).then(function(item) {
+
+    	gowner = item.get('owner');
+
     	if(item.get('availability')) {
     		item.set('availability', false);
     		item.set('interestedUser', userObj);
+    		message = 'Someone is interested in your ' + item.get('item').get('name');
     	}
     	else {
     		item.set('availability', true);
     		item.set('interestedUser', null);
+    		message = 'Someone is no longer interested in your ' + item.get('item').get('name');
     	}
     	return item.save();
     }).then(function(item) {
+    	var mobilenumber = gowner.get('phoneNumber');
+		if(mobilenumber === '+6598060481') {
+			return sendSMS(mobilenumber, message);
+		}
+	}).then(function() {
     	res.send({code: 200, message: "Success", interested: !item.get('availability')});
     }, function(error) {
     	console.log(error);
