@@ -508,7 +508,6 @@ var createItems = function(userObj, value, itemValue, res) {
         }
 	});
 	return promise;
-
 };
 
 var checkPhoneNumberAlreadyExists = function(phoneNumber) {
@@ -528,70 +527,6 @@ var checkPhoneNumberAlreadyExists = function(phoneNumber) {
     }, function(error) {
         return Parse.Promise.as(undefined);
     });
-};
-
-var createACL = function(userObj, read, write, res) {
-
-    var promise = new Parse.Promise();
-
-    var acl = new Parse.ACL();
-    acl.setReadAccess(userObj, read);
-    acl.setWriteAccess(userObj, write);
-    if (res) res.success(acl);
-        promise.resolve(acl);
-    return promise;
-};
-
-var assignACL = function(userObj, acl, res) {
-
-    var promise = new Parse.Promise();
-
-    Parse.Cloud.useMasterKey();
-
-    userObj.set("ACL", acl);
-    userObj.save().then(function(userObj) {
-        if (res) res.success(userObj);
-        promise.resolve(userObj);
-    }, function(error) {
-        if (res) res.error(error);
-        promise.reject(error);
-    });
-
-    return promise;
-};
-
-var publicDataObj = function(userObj, hubObj, res) {
-
-    var promise = new Parse.Promise();
-
-    var roleName = "friendsOf_" + userObj.id;
-    var friendRole = new Parse.Role(roleName, new Parse.ACL(userObj));
-    friendRole.save().then(function(friendRole) {
-        var acl = new Parse.ACL();
-        acl.setReadAccess(friendRole, true);
-        acl.setReadAccess(userObj, true);
-        acl.setWriteAccess(userObj, true);
-        var friendData = new Parse.Object("FriendData", {
-            user: userObj,
-            ACL: acl,
-            name: userObj.get('name'),
-            phoneNumber: userObj.get('phoneNumber'),
-            email: userObj.get('email'),
-            address: userObj.get('address'),
-            profilePicture: userObj.get('profilePicture'),
-            dateOfBirth: userObj.get('dateOfBirth'),
-            hub: hubObj
-        });
-        return friendData.save();
-    }).then(function(friendData) {
-        if (res) res.success(friendData);
-        promise.resolve(friendData);
-    }, function(error) {
-        if (res) res.error(error);
-        promise.reject(error);
-    });
-
-    return promise;
 };
 
 String.prototype.capitalise = function() {
