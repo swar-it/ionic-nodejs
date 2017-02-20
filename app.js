@@ -301,16 +301,18 @@ app.post('/addYourItem', function(req, res) {
 
 	if(itemValue === "apple")
 			value = 7;
-		else if(itemValue === "banana")
-			value = 2;
-		else if(itemValue === "bread")
-			value = 3;
-		else if(itemValue === "chicken")
-			value = 4;
-		else if(itemValue === "grapes")
-			value = 3;
-		else if(itemValue === "tofu")
-			value = 3;
+	else if(itemValue === "banana")
+		value = 2;
+	else if(itemValue === "bread")
+		value = 3;
+	else if(itemValue === "chicken")
+		value = 4;
+	else if(itemValue === "grapes")
+		value = 3;
+	else if(itemValue === "tofu")
+		value = 3;
+	else if(itemValue === "milk")
+			value = 10;
 
 	var currentDate = new Date();
 	var nextDate = new Date(currentDate);
