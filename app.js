@@ -256,6 +256,7 @@ app.post('/getYourItems', function(req, res) {
 		className: "_User",
 		objectId: userId
 	});
+	itemQuery.equalTo("consumed", false);
 	itemQuery.find().then(function(items) {
 
 		var promise = Parse.Promise.as();
