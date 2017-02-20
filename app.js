@@ -342,18 +342,48 @@ app.post('/addYourItem', function(req, res) {
 app.post('/shareYourItem', function(req, res) {
 
 	var userId = req.body.userid,
-		itemId = req.body.itemid
+		itemId = req.body.itemid,
+		gitemObj,
 		address = req.body.address;
 
 	var User = Parse.Object.extend("User");
 	var userObj = new User();
 	userObj.id = userId;
 
-	var Item = Parse.Object.extend("Item");
-	var itemObj = new Item();
-	itemObj.id = itemId;
+    var Item = Parse.Object.extend("Item");
+    var itemQuery  = new Parse.Query(Item);
+    itemQuery.get(itemId).then(function(itemObj) {
 
-	geocoder.geocode(address).then(function(res) {
+    	gitemObj = itemObj;
+    	return geocoder.geocode(address);
+
+    }).then(function(res) {
+
+    	var AvailableItem = Parse.Object.extend("AvailableItem");
+	    var availItemObj  = new AvailableItem();
+		availItemObj.set("item", gitemObj);
+		availItemObj.set("owner", userObj);
+		availItemObj.set("availability", true);
+		availItemObj.set("location",  new Parse.GeoPoint({latitude: res[0].latitude, longitude: res[0].longitude}));
+		return availItemObj.save();
+
+	}).then(function(availItemObj) {
+		return notifyUsers(availItemObj, availItemObj.get('item').get('name'));
+    }).then(function() {
+    	res.send({code: 200, message: "Success"});
+    }, function(error) {
+    	console.log(error);
+    	res.status(404).send({code: 404, message: "Failure"});
+    })
+    
+
+	// var Item = Parse.Object.extend("Item");
+	// var itemObj = new Item();
+	// itemObj.id = itemId;
+
+	/*geocoder.geocode(address).then(function(res) {
+
+		console.log(itemObj.get('name'));
 
 		var AvailableItem = Parse.Object.extend("AvailableItem");
 	    var availItemObj  = new AvailableItem();
@@ -364,11 +394,14 @@ app.post('/shareYourItem', function(req, res) {
 		return availItemObj.save();
 	}).then(function(availItemObj) {
     	console.log(availItemObj);
+    	console.log(itemObj.get('name'));
+    	return notifyUsers(availItemObj, availItemObj.get('item').get('name'));
+    }).then(function() {
     	res.send({code: 200, message: "Success"});
     }, function(error) {
     	console.log(error);
     	res.status(404).send({code: 404, message: "Failure"});
-    });
+    });*/
 });
 
 app.post('/getAvailableItems', function(req, res) {
@@ -449,51 +482,6 @@ app.post('/changeInterest', function(req, res) {
 
 });
 
-var sendPushNotificationToUser = function (receiverId, message, res) {
-
-	var data = {
-		badge: 'Increment',
-		alert: message
-	}
- 
-	return sendPushNotification(receiverId, data, res);
-};
-
-var sendPushNotification = function (receiverId, data, res) {
-
-	var data = data || JSON.stringify({}),
-		promise = new Parse.Promise();
-
-	request({
-		url: 'https://ionicparseserver.azurewebsites.net/parse/functions/sendPushNotification',
-		method: 'post',
-		json: true,
-		headers: {
-				'content-type': 'application/json',
-				'X-Parse-Application-Id': '84f20369-f89a-42fa-a2a7-1ffa2933c4f8'
-			},
-		body:
-		{
-			"recipient": receiverId,
-			"data": data
-		},
-	},  function (error, response, data) {
-
-		if (!error && response.statusCode == 200) {
-			promise.resolve('Push notification sent successfully.');
-		}
-
-		else {
-			console.log(response.body.error);
-			promise.reject('Push notification not sent');
-		}
-	});
-
-	return promise;
-};
-
-// sendPushNotificationToUser("0Jo0kuyYFh", "friends_msg");
-
 var createItems = function(userObj, value, itemValue, res) {
 
 	var promise = new Parse.Promise();
@@ -540,6 +528,108 @@ var checkPhoneNumberAlreadyExists = function(phoneNumber) {
         return Parse.Promise.as(undefined);
     });
 };
+
+var notifyUsers = function(availItem, itemName) {
+
+	var promises = [];
+
+	var User = Parse.Object.extend("User");
+    var query  = new Parse.Query(User);
+    query.find().then(function(users) {
+
+    	var message = 'Someone is giving away free ' + itemName;
+
+    	var promise = Parse.Promise.as();
+
+		_.each(users, function(user) {
+
+			promise = promise.then(function() {
+
+				if(user.id !== availItem.get('owner').id) {
+
+					var mobilenumber = user.get('phoneNumber');
+
+					if(mobilenumber === '+6598060481') {
+						return sendSMS(mobilenumber, message);
+					}
+				}
+
+			});
+			promises.push(promise);
+		});
+		return Parse.Promise.when(promises);
+	}).then(function() {
+        return Parse.Promise.as();
+    }, function(error) {
+        return Parse.Promise.error(error);
+    });
+}
+
+var sendSMS = function (phoneNumber, message, res) {
+
+    var promise = new Parse.Promise();
+
+    if(phoneNumber) {
+
+        twilioClient.messages.create({
+            to: phoneNumber,
+            from:'+1 818-946-0853',
+            body: message
+        }).then(function(message) {
+            if (res) res.success(message);
+            promise.resolve(message);
+        }, function(error) {
+            if (res) res.error(error);
+            promise.reject(error);
+        });
+        return promise;
+    }
+};
+
+var sendPushNotificationToUser = function (receiverId, message, res) {
+
+	var data = {
+		badge: 'Increment',
+		alert: message
+	}
+ 
+	return sendPushNotification(receiverId, data, res);
+};
+
+var sendPushNotification = function (receiverId, data, res) {
+
+	var data = data || JSON.stringify({}),
+		promise = new Parse.Promise();
+
+	request({
+		url: 'https://ionicparseserver.azurewebsites.net/parse/functions/sendPushNotification',
+		method: 'post',
+		json: true,
+		headers: {
+				'content-type': 'application/json',
+				'X-Parse-Application-Id': '84f20369-f89a-42fa-a2a7-1ffa2933c4f8'
+			},
+		body:
+		{
+			"recipient": receiverId,
+			"data": data
+		},
+	},  function (error, response, data) {
+
+		if (!error && response.statusCode == 200) {
+			promise.resolve('Push notification sent successfully.');
+		}
+
+		else {
+			console.log(response.body.error);
+			promise.reject('Push notification not sent');
+		}
+	});
+
+	return promise;
+};
+
+// sendPushNotificationToUser("0Jo0kuyYFh", "friends_msg");
 
 String.prototype.capitalise = function() {
     return this.charAt(0).toUpperCase() + this.slice(1);
