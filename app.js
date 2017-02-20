@@ -238,6 +238,11 @@ app.post('/signup', function(req, res) {
     // }
 });
 
+app.post('/sendLocation', function(req, res) {
+
+	console.log(req.body);
+});
+
 app.post('/getYourItems', function(req, res) {
 
 	var userId = req.body.userid,
