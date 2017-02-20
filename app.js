@@ -263,7 +263,16 @@ app.post('/getYourItems', function(req, res) {
 
 		_.each(items, function(item) {
 			promise = promise.then(function() {
-				itemList.push({id: item.id, name: item.get('name'), expirydate: formatDate(item.get('expiryDate')), consumed: item.get('consumed')});
+
+				dueDateStamp = item.get('expiryDate'),
+					selectedDateStamp = new Date().toISOString();
+
+				if(moment(dueDateStamp).isBefore(selectedDateStamp) || (moment(dueDateStamp).isSame(selectedDateStamp, "day")))
+					var expired = true;
+				else
+					var expired = false;
+
+				itemList.push({id: item.id, name: item.get('name'), expirydate: formatDate(item.get('expiryDate')), expired: expired, consumed: item.get('consumed')});
 			});
 		});
 		return promise;
