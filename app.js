@@ -393,7 +393,7 @@ app.post('/getAvailableItems', function(req, res) {
 								var interested = true;
 							else var interested = false;
 
-							itemList.push({id: item.id, name: item.get('item').get('name'), expirydate: formatDate(item.get('item').get('expiryDate')), interested: interested, location: item.get('location')});
+							itemList.push({id: item.id, name: item.get('item').get('name'), expirydate: formatDate(item.get('item').get('expiryDate')), interested: interested, location: item.get('location'), ownername: item.get('owner').get('name'), ownercontact: item.get('owner').get('phoneNumber')});
 						}
 					}
 				}
