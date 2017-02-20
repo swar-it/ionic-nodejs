@@ -363,7 +363,6 @@ app.post('/getAvailableItems', function(req, res) {
     var availItemQuery  = new Parse.Query(AvailableItem);
     availItemQuery.include("owner");
     availItemQuery.include("item");
-    availItemQuery.equalTo("availability", true);
 	availItemQuery.find().then(function(items) {
 
 		var promise = Parse.Promise.as();
@@ -371,19 +370,112 @@ app.post('/getAvailableItems', function(req, res) {
 		_.each(items, function(item) {
 			promise = promise.then(function() {
 
-				if(item.get('owner').id !== userId)
-					itemList.push({id: item.id, name: item.get('item').get('name'), expirydate: formatDate(item.get('item').get('expiryDate')), interested: (item.get('interestedUser')  && item.get('interestedUser').id) === userId, location: item.get('location')});
+				var interestedUser = item.get('interestedUser');
+
+				(interestedUser && typeof interestedUser != 'undefined' && interestedUser != 'undefined')
+
+				if(item.get('owner').id !== userId) {
+
+					if(!(interestedUser && typeof interestedUser != 'undefined' && interestedUser != 'undefined') || ((interestedUser && typeof interestedUser != 'undefined' && interestedUser != 'undefined') && (item.get('interestedUser').id === userId))) {
+
+						dueDateStamp = item.get('item').get('expiryDate'),
+						selectedDateStamp = new Date().toISOString();
+
+						if(moment(selectedDateStamp).isBefore(dueDateStamp) && !(moment(dueDateStamp).isSame(selectedDateStamp, "day"))) {
+
+							if((interestedUser && typeof interestedUser != 'undefined' && interestedUser != 'undefined')  && (item.get('interestedUser').id === userId))
+								var interested = true;
+							else var interested = false;
+
+							itemList.push({id: item.id, name: item.get('item').get('name'), expirydate: formatDate(item.get('item').get('expiryDate')), interested: interested, location: item.get('location')});
+						}
+					}
+				}
 			});
 		});
 		return promise;
 	}).then(function() {
-		console.log(itemList);
 		res.send(itemList);
 	}, function(error) {
 		console.log(error);
 		res.status(404).send({code: 404, message: error.message});
 	})
 });
+
+app.post('/changeInterest', function(req, res) {
+
+	var userId = req.body.userid,
+		itemId = req.body.itemid;
+
+	var User = Parse.Object.extend("User");
+	var userObj = new User();
+	userObj.id = userId;
+
+	var AvailableItem = Parse.Object.extend("AvailableItem");
+    var availItemQuery  = new Parse.Query(AvailableItem);
+    availItemQuery.get(itemId).then(function(item) {
+    	if(item.get('availability')) {
+    		item.set('availability', false);
+    		item.set('interestedUser', userObj);
+    	}
+    	else {
+    		item.set('availability', true);
+    		item.set('interestedUser', null);
+    	}
+    	return item.save();
+    }).then(function(item) {
+    	res.send({code: 200, message: "Success", interested: !item.get('availability')});
+    }, function(error) {
+    	console.log(error);
+    	res.status(404).send({code: 404, message: "Failure"});
+    });
+
+});
+
+var sendPushNotificationToUser = function (receiverId, message, res) {
+
+	var data = {
+		badge: 'Increment',
+		alert: message
+	}
+ 
+	return sendPushNotification(receiverId, data, res);
+};
+
+var sendPushNotification = function (receiverId, data, res) {
+
+	var data = data || JSON.stringify({}),
+		promise = new Parse.Promise();
+
+	request({
+		url: 'https://ionicparseserver.azurewebsites.net/parse/functions/sendPushNotification',
+		method: 'post',
+		json: true,
+		headers: {
+				'content-type': 'application/json',
+				'X-Parse-Application-Id': '84f20369-f89a-42fa-a2a7-1ffa2933c4f8'
+			},
+		body:
+		{
+			"recipient": receiverId,
+			"data": data
+		},
+	},  function (error, response, data) {
+
+		if (!error && response.statusCode == 200) {
+			promise.resolve('Push notification sent successfully.');
+		}
+
+		else {
+			console.log(response.body.error);
+			promise.reject('Push notification not sent');
+		}
+	});
+
+	return promise;
+};
+
+// sendPushNotificationToUser("0Jo0kuyYFh", "friends_msg");
 
 var createItems = function(userObj, value, itemValue, res) {
 
@@ -400,15 +492,12 @@ var createItems = function(userObj, value, itemValue, res) {
 	itemObj.set("expiryDate", nextDate);
 	itemObj.set("consumed", false);
 	itemObj.save().then(function(itemObj) {
-		console.log(itemObj);
 		if(!itemObj) {
-			console.log("Failure");
             var error = {code: 404, message: "Failure"};
             if (res) res.error(error);
             promise.reject(error);
         }
         else {
-        	console.log("Success");
             if (res) res.success(itemObj);
             promise.resolve(itemObj);
         }
